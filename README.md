@@ -3,6 +3,8 @@
 A retro, folder-first music player for Android (made for a Nothing Phone (3a)).
 Everything is local: no account, no streaming, no tracking.
 
+<img width="1800" height="1298" alt="image" src="https://github.com/user-attachments/assets/4cb03cda-c402-44cf-adfa-c85f0f603685" />
+
 ## Install
 
 1. Copy `Crate-1.0.apk` to the phone (or download it there) and tap it.
