@@ -769,7 +769,6 @@ RENDER.album = (v, root) => {
   const a = S.lib && S.lib.albumMap.get(v.arg);
   if (!a) return RENDER.missing(v, root);
   const multiDisc = new Set(a.tracks.map(t => t.sub)).size > 1;
-  const discs = a.goodNums && a.tracks.some(t => Math.floor(t.trk / 1000) > 1);
   root.style.setProperty('--hc', `hsl(${hue(a.key)} 40% 26%)`);
   root.innerHTML = topbar(a.name) +
     `<div class="hero">${albumArt(a, 'hero-art', 720)}<h1>${esc(a.name)}</h1>` +
@@ -785,9 +784,9 @@ RENDER.album = (v, root) => {
   let html = '', lastSub = null;
   a.tracks.forEach((t, i) => {
     if (multiDisc && t.sub !== lastSub) { html += `<div class="disc-hd">${ic('disc', 'xs')}<span class="label">${esc(t.sub || 'Disc')}</span></div>`; lastSub = t.sub; }
-    const n = a.goodNums ? t.trk % 1000 : i + 1;
+    const n = i + 1;   // always 1, 2, 3 … in the order shown
     const showArtist = t.tagArtist && t.tagArtist.toLowerCase() !== a.artist.toLowerCase() && t.tagArtist !== '<unknown>';
-    html += trackRow(t, i, { num: discs && !multiDisc ? `${Math.floor(t.trk / 1000)}.${n}` : n, sub: esc(showArtist ? t.tagArtist : t.artist), dur: t.dur });
+    html += trackRow(t, i, { num: n, sub: esc(showArtist ? t.tagArtist : t.artist), dur: t.dur });
   });
   box.innerHTML = html;
   root.querySelector('.slot-list').replaceWith(box);
