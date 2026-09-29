@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A neon vinyl record on black (original artwork). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FF141714"
+        android:pathData="M24,54a30,30 0 1,0 60,0a30,30 0 1,0 -60,0z" />
+    <path android:fillColor="#00000000" android:strokeColor="#FF35E07C" android:strokeWidth="1.8"
+        android:pathData="M24.9,54a29.1,29.1 0 1,0 58.2,0a29.1,29.1 0 1,0 -58.2,0z" />
+    <path android:fillColor="#00000000" android:strokeColor="#6635E07C" android:strokeWidth="0.9"
+        android:pathData="M28.5,54a25.5,25.5 0 1,0 51,0a25.5,25.5 0 1,0 -51,0z" />
+    <path android:fillColor="#00000000" android:strokeColor="#4435E07C" android:strokeWidth="0.9"
+        android:pathData="M32.5,54a21.5,21.5 0 1,0 43,0a21.5,21.5 0 1,0 -43,0z" />
+    <path android:fillColor="#00000000" android:strokeColor="#3335E07C" android:strokeWidth="0.9"
+        android:pathData="M36.5,54a17.5,17.5 0 1,0 35,0a17.5,17.5 0 1,0 -35,0z" />
+    <path android:fillColor="#00000000" android:strokeColor="#99FFFFFF" android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M46.82,38.59A17,17 0 0,0 38.03,48.19" />
+    <path android:fillColor="#00000000" android:strokeColor="#55FFFFFF" android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M61.18,69.41A17,17 0 0,0 68.72,62.5" />
+    <path android:fillColor="#FF35E07C"
+        android:pathData="M43,54a11,11 0 1,0 22,0a11,11 0 1,0 -22,0z" />
+    <path android:fillColor="#FF0A0B0A"
+        android:pathData="M51.8,54a2.2,2.2 0 1,0 4.4,0a2.2,2.2 0 1,0 -4.4,0z" />
+</vector>

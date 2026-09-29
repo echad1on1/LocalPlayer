@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Crate</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <main id="views"></main>
+
+  <div id="mini" class="mini" role="button" aria-label="Now playing">
+    <div class="art mini-art"><img alt=""></div>
+    <div class="mini-meta">
+      <div class="mini-title"></div>
+      <div class="mini-sub"></div>
+    </div>
+    <button class="ibtn mini-like" data-act="like-current" aria-label="Like"></button>
+    <button class="ibtn mini-play" data-act="toggle" aria-label="Play or pause"></button>
+    <div class="mini-bar"><i></i></div>
+  </div>
+
+  <nav id="tabs">
+    <button data-tab="home" aria-label="Home"></button>
+    <button data-tab="search" aria-label="Search"></button>
+    <button data-tab="library" aria-label="Your library"></button>
+  </nav>
+</div>
+
+<section id="player" aria-hidden="true">
+  <div class="np-bg"></div>
+  <header class="np-top">
+    <button class="ibtn" data-act="close-player" aria-label="Close"></button>
+    <button class="np-src" data-act="player-context">
+      <span class="np-src-k">Playing from</span>
+      <b class="np-src-v"></b>
+    </button>
+    <button class="ibtn" data-act="more-current" aria-label="More"></button>
+  </header>
+  <div class="np-stage">
+    <div class="np-art-wrap">
+      <div class="np-vinyl-slot"><div class="np-vinyl"></div></div>
+      <div class="art np-art"><img alt=""></div>
+    </div>
+  </div>
+  <div class="np-meta">
+    <div class="np-text">
+      <div class="np-title"><span></span></div>
+      <button class="np-artist" data-act="player-artist"></button>
+    </div>
+    <button class="ibtn np-like" data-act="like-current" aria-label="Like"></button>
+  </div>
+  <div class="seek" aria-label="Seek">
+    <div class="seek-track"><i></i></div>
+    <div class="seek-knob"></div>
+  </div>
+  <div class="np-times"><span class="t-pos">0:00</span><span class="t-dur">0:00</span></div>
+  <div class="np-ctrls">
+    <button class="ibtn c-shuffle" data-act="shuffle" aria-label="Shuffle"></button>
+    <button class="ibtn c-prev" data-act="prev" aria-label="Previous"></button>
+    <button class="c-main" data-act="toggle" aria-label="Play or pause"></button>
+    <button class="ibtn c-next" data-act="next" aria-label="Next"></button>
+    <button class="ibtn c-repeat" data-act="repeat" aria-label="Repeat"></button>
+  </div>
+  <div class="np-foot">
+    <button class="pill c-sleep" data-act="sleep"><span class="c-sleep-ic"></span><span class="c-sleep-t">Sleep</span></button>
+    <button class="pill" data-act="queue"><span class="c-queue-ic"></span><span>Queue</span></button>
+  </div>
+</section>
+
+<div id="gate" hidden></div>
+<div id="sheets"></div>
+<div id="toast" role="status"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
