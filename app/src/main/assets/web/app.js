@@ -203,6 +203,20 @@ function buildLib(raw) {
     if (t.added > a.added) a.added = t.added;
     t.al = a;
   }
+  // Track numbers from the file tags that don't fit the album (like 37, 158, 200 in a 3-song album)
+  // are ignored: those albums are sorted by file name and numbered 1, 2, 3…
+  for (const a of albums) {
+    const nums = a.tracks.map(t => t.trk % 1000);
+    const seen = new Set();
+    let ok = nums.every(n => n > 0) && Math.max(...nums) <= a.tracks.length + 3;
+    for (const t of a.tracks) {
+      const k = t.sub + '|' + Math.floor(t.trk / 1000) + '|' + (t.trk % 1000);
+      if (seen.has(k)) ok = false;
+      seen.add(k);
+    }
+    a.goodNums = ok;
+    if (!ok) a.tracks.sort((x, y) => cmp(x.sub, y.sub) || cmp(x.file, y.file));
+  }
   const artists = [], artistMap = new Map();
   for (const a of albums) {
     let ar = artistMap.get(a.rk);
@@ -744,7 +758,7 @@ function folderRow(n) {
 function renderFolderContents(box, n, root) {
   const items = n.kidList.map(k => ({ k })).concat(n.tracks.map((t, i) => ({ t, i })));
   const lb = lazyBox('tl', items, it => it.k ? folderRow(it.k)
-    : trackRow(it.t, it.i, { num: (it.t.trk % 1000) || (it.i + 1), sub: esc(it.t.file), dur: it.t.dur }));
+    : trackRow(it.t, it.i, { num: it.i + 1, sub: esc(it.t.file), dur: it.t.dur }));
   lb._list = listOf(n.tracks, n.label, 'folder:' + n.path);
   box.appendChild(lb);
   if (!root._ctx) root._ctx = listOf(folderTracks(n), n.label, 'folderall:' + n.path);
@@ -755,7 +769,7 @@ RENDER.album = (v, root) => {
   const a = S.lib && S.lib.albumMap.get(v.arg);
   if (!a) return RENDER.missing(v, root);
   const multiDisc = new Set(a.tracks.map(t => t.sub)).size > 1;
-  const discs = a.tracks.some(t => Math.floor(t.trk / 1000) > 1);
+  const discs = a.goodNums && a.tracks.some(t => Math.floor(t.trk / 1000) > 1);
   root.style.setProperty('--hc', `hsl(${hue(a.key)} 40% 26%)`);
   root.innerHTML = topbar(a.name) +
     `<div class="hero">${albumArt(a, 'hero-art', 720)}<h1>${esc(a.name)}</h1>` +
@@ -771,7 +785,7 @@ RENDER.album = (v, root) => {
   let html = '', lastSub = null;
   a.tracks.forEach((t, i) => {
     if (multiDisc && t.sub !== lastSub) { html += `<div class="disc-hd">${ic('disc', 'xs')}<span class="label">${esc(t.sub || 'Disc')}</span></div>`; lastSub = t.sub; }
-    const n = t.trk % 1000 || (i + 1);
+    const n = a.goodNums ? t.trk % 1000 : i + 1;
     const showArtist = t.tagArtist && t.tagArtist.toLowerCase() !== a.artist.toLowerCase() && t.tagArtist !== '<unknown>';
     html += trackRow(t, i, { num: discs && !multiDisc ? `${Math.floor(t.trk / 1000)}.${n}` : n, sub: esc(showArtist ? t.tagArtist : t.artist), dur: t.dur });
   });
