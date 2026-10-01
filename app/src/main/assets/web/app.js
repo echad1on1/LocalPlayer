@@ -97,7 +97,10 @@ const ICONS = {
   sort: '<path class="s" d="M7 5v14M4 16l3 3 3-3M17 19V5M14 8l3-3 3 3"/>',
   refresh: '<path class="s" d="M19 12a7 7 0 1 1-2.05-4.95M19 4.5V9h-4.5"/>',
   clock: '<circle class="s" cx="12" cy="12" r="8.5"/><path class="s" d="M12 7.5V12l3 2"/>',
-  bolt: '<path class="s" d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/>'
+  bolt: '<path class="s" d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/>',
+  vol: '<path class="f" d="M4 9.5h3.2L12 5.6v12.8l-4.8-3.9H4z"/><path class="s" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
+  vol1: '<path class="f" d="M4 9.5h3.2L12 5.6v12.8l-4.8-3.9H4z"/><path class="s" d="M15.5 9a4 4 0 0 1 0 6"/>',
+  vol0: '<path class="f" d="M4 9.5h3.2L12 5.6v12.8l-4.8-3.9H4z"/><path class="s" d="m16 9.5 5 5M21 9.5l-5 5"/>'
 };
 const ic = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 const EQ = '<span class="eq"><i></i><i></i><i></i></span>';
@@ -121,6 +124,9 @@ function kvGet(k, def) {
 }
 function kvSet(k, v) { nat('kvSet', k, v == null ? null : JSON.stringify(v)); }
 const haptic = (kind = 0) => nat('haptic', kind);
+// The Mac app (desktop/) adds a few Native methods. On the phone all of this stays off.
+const DESKTOP = !!(N && typeof N.platform === 'function');
+const IS_MAC = DESKTOP && nat('platform') === 'darwin';
 
 // ================================================================== state
 
@@ -297,21 +303,30 @@ function folderTracks(node) {
 function displayPath(folder) {
   const ci = folder.indexOf(':');
   const vol = folder.slice(0, ci), rel = folder.slice(ci + 1);
+  if (vol === 'local') {
+    const p = '/' + rel;
+    const home = S.home ? S.home.replace(/\/+$/, '') + '/' : '';
+    return home && p.startsWith(home) ? '~/' + p.slice(home.length) : p;
+  }
   return (vol === 'external_primary' ? '' : `[${vol}] `) + rel;
 }
+const localFolder = p => 'local:' + String(p).replace(/^\/+/, '').replace(/\/*$/, '/');
 
 async function loadLibrary(reason) {
   S.libError = false;
+  let raw = null;
   try {
     const r = await fetch('/api/library', { cache: 'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    const raw = await r.json();
+    raw = await r.json();
     S.lib = buildLib(raw);
   } catch (e) {
     console.error('library', e);
     S.libError = true;
     if (!S.lib) S.lib = buildLib({ tracks: [], roots: ['*'], auto: true });
   }
+  S.scan = null;
+  if (DESKTOP) nat('setLibrary', raw || { tracks: [] });
   loadStats();
   S.curT = null;
   rebuildAll();
@@ -475,6 +490,7 @@ function show(animate) {
   if (animate) { v.el.classList.remove('enter'); void v.el.offsetWidth; v.el.classList.add('enter'); }
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
   onViewScroll.call(v.el);
+  renderSide();
 }
 function push(type, arg) {
   closeAllSheets();
@@ -518,6 +534,7 @@ function refreshViews(types) {
       if (visible) { restoreScroll(v.el, scroll || 0); onViewScroll.call(v.el); }
     }
   }
+  renderSide();
 }
 function viewValid(v) {
   const L = S.lib;
@@ -556,10 +573,23 @@ function onViewScroll() {
 // ================================================================== views
 
 function loadingHTML() {
-  return `<div class="loading"><div class="dot-title">Digging<span class="blink">_</span></div><p class="dim mono" style="font-size:12px;margin-top:14px">Reading your music folders</p></div>`;
+  return `<div class="loading"><div class="dot-title">Digging<span class="blink">_</span></div><p class="dim mono scan-note" style="font-size:12px;margin-top:14px">${esc(scanText(S.scan))}</p></div>`;
+}
+function scanText(p) {
+  if (!p) return 'Reading your music folders';
+  if (p.phase === 'find') return `Found ${plural(p.done || 0, 'song')}…`;
+  if (p.phase === 'read' && p.total) return `Reading ${Number(p.done || 0).toLocaleString()} of ${plural(p.total, 'song')}`;
+  return 'Reading your music folders';
 }
 function emptyLibraryHTML() {
   const L = S.lib;
+  if (DESKTOP) {
+    const f = nat('folders') || [];
+    const where = f.length ? f.map(x => displayPath(localFolder(x))).join(', ') : '';
+    return `<div class="empty"><div class="dot-title">Empty crate</div>` +
+      `<p>${where ? `No music found in <code>${esc(where)}</code>.<br>` : ''}Choose the folder where your music lives, like a folder of <code>Artist/Album/01 Song.mp3</code> folders.</p>` +
+      `<button class="btn" data-act="desk-choose">${ic('folder', 'sm')} Choose music folder…</button></div>`;
+  }
   const hidden = L && L.total > 0;
   return `<div class="empty"><div class="dot-title">Empty crate</div>` +
     (hidden
@@ -741,7 +771,8 @@ function renderLibBody(root) {
   } else if (f === 'folders') {
     const roots = L.rootNodes;
     if (roots.length === 1) {
-      const n = roots[0];
+      let n = roots[0];
+      while (!n.tracks.length && n.kidList.length === 1) n = n.kidList[0];   // skip wrapper folders
       body.innerHTML = `<div class="sortbar"><span class="label">${esc(displayPath(n.path))}</span></div>`;
       renderFolderContents(body, n, root);
     } else if (roots.length) {
@@ -874,11 +905,12 @@ RENDER.settings = (v, root) => {
   const musicCount = L ? L.folders.filter(f => f[1].toLowerCase() === 'music').reduce((s, f) => s + f[2], 0) : 0;
   let html = topbar('Settings') + `<div class="page-hd" style="padding-top:4px"><h1 class="dot-title">Settings</h1></div>`;
 
-  html += `<div class="set-sec"><span class="label">Music folders</span><p class="set-help">Crate turns folders into your library: <code>Music/Artist/Album/song.mp3</code>. <code>Artist - Album</code> folders work too.</p><div class="set-card">` +
+  if (DESKTOP) html += deskFoldersHTML(L);
+  else html += `<div class="set-sec"><span class="label">Music folders</span><p class="set-help">Crate turns folders into your library: <code>Music/Artist/Album/song.mp3</code>. <code>Artist - Album</code> folders work too.</p><div class="set-card">` +
     radioRow('auto', d.mode, 'Music folder', musicCount ? plural(musicCount, 'song') : 'The standard Music folder') +
     radioRow('all', d.mode, 'Everything on the phone', L ? plural(L.total, 'song') : '') +
     radioRow('custom', d.mode, 'Choose folders…', 'Pick exactly where to look') + `</div>`;
-  if (d.mode === 'custom' && L) {
+  if (!DESKTOP && d.mode === 'custom' && L) {
     html += `<div class="set-card" style="margin-top:10px">`;
     const top = L.folders.filter(f => !f[1].includes('/'));
     for (const f of top) {
@@ -894,7 +926,7 @@ RENDER.settings = (v, root) => {
     html += `</div>`;
   }
   const changed = d.mode + '|' + (d.mode === 'custom' ? Array.from(d.sel).sort().join(',') : (d.mode === 'all' ? '*' : roots.slice().sort().join(','))) !== d.orig;
-  html += `<div style="display:flex;gap:10px;margin-top:12px"><button class="btn" data-act="roots-apply"${changed ? '' : ' disabled style="opacity:.4"'}>Apply</button><button class="btn ghost" data-act="rescan">${ic('refresh', 'sm')} Rescan</button></div></div>`;
+  if (!DESKTOP) html += `<div style="display:flex;gap:10px;margin-top:12px"><button class="btn" data-act="roots-apply"${changed ? '' : ' disabled style="opacity:.4"'}>Apply</button><button class="btn ghost" data-act="rescan">${ic('refresh', 'sm')} Rescan</button></div></div>`;
 
   const accents = [['green', '#35e07c'], ['amber', '#ffb020'], ['cyan', '#33d6ff'], ['pink', '#ff5cc8'], ['red', '#ff4032'], ['white', '#f2f2f2']];
   html += `<div class="set-sec"><span class="label">Glow colour</span><div class="set-card"><div class="swatches">` +
@@ -906,9 +938,23 @@ RENDER.settings = (v, root) => {
     html += `<div class="set-sec"><span class="label">Your crate</span><div class="set-card"><div class="stats-line">${plural(L.vis.length, 'song')} · ${plural(L.albums.length, 'album')} · ${plural(L.artists.length, 'artist')}<br>${fmtLong(dur)} of music · ${plural(plays, 'play')} counted</div>` +
       `<button class="set-row" data-act="clear-history"><div class="meta"><div class="t">Clear listening history</div><div class="s">Resets “Jump back in”, “On repeat” and play counts</div></div></button></div></div>`;
   }
-  html += `<div class="set-sec" style="margin-bottom:10px"><span class="label">About</span><div class="set-card"><div class="stats-line">Crate ${esc(nat('version') || '')} — your music, straight from your folders.<br>No account, no cloud, no tracking.<br>Fonts: Doto &amp; Space Mono (SIL Open Font License).</div></div></div>`;
+  html += `<div class="set-sec" style="margin-bottom:10px"><span class="label">About</span><div class="set-card"><div class="stats-line">Crate${DESKTOP ? (IS_MAC ? ' for Mac' : ' desktop') : ''} ${esc(nat('version') || '')} — your music, straight from your folders.<br>No account, no cloud, no tracking.<br>Fonts: Doto &amp; Space Mono (SIL Open Font License).</div></div></div>`;
   root.innerHTML = html;
 };
+function deskFoldersHTML(L) {
+  const fl = nat('folders') || [];
+  const inside = (t, root) => ('/' + t.folder.slice(t.folder.indexOf(':') + 1)).startsWith(root.replace(/\/+$/, '') + '/');
+  const rows = fl.map(p => {
+    const n = L ? L.vis.filter(t => inside(t, p)).length : 0;
+    return `<div class="set-row"><span class="set-ic">${ic('folder', 'sm')}</span><div class="meta"><div class="t ell">${esc(displayPath(localFolder(p)))}</div>` +
+      `<div class="s">${L ? plural(n, 'song') : ''}</div></div><button class="ibtn" data-act="desk-remove" data-k="${esc(p)}" aria-label="Remove folder" title="Remove from Crate (files stay)">${ic('close', 'sm')}</button></div>`;
+  }).join('');
+  return `<div class="set-sec"><span class="label">Music folders</span><p class="set-help">Crate turns folders into your library: <code>Artist/Album/song.mp3</code>. ` +
+    `<code>Artist - Album</code> folders and disc folders like <code>CD1</code> work too. New music shows up by itself.</p><div class="set-card">` +
+    (rows || `<div class="set-row"><div class="meta"><div class="s">No music folder chosen yet.</div></div></div>`) + `</div>` +
+    `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-act="desk-add">${ic('plus', 'sm')} Add folder…</button>` +
+    `<button class="btn ghost" data-act="rescan">${ic('refresh', 'sm')} Rescan</button></div></div>`;
+}
 function radioRow(k, cur, t, s) {
   return `<button class="set-row${cur === k ? ' on' : ''}" data-act="roots-mode" data-k="${k}"><span class="radio"></span><div class="meta"><div class="t">${esc(t)}</div><div class="s">${esc(s)}</div></div></button>`;
 }
@@ -944,18 +990,20 @@ function applyState(force) {
   if (t) E.src.textContent = (st && st.ctx) || t.album;
   const playIcon = ic(st && st.playing ? 'pause' : 'play');
   $('#mini .mini-play').innerHTML = playIcon;
-  $('#player .c-main').innerHTML = playIcon;
+  $$('.c-main').forEach(b => { b.innerHTML = playIcon; });
   const sh = !!(st && st.shuffle);
-  $('#player .c-shuffle').classList.toggle('on', sh);
-  $$('.tg-shuffle').forEach(b => b.classList.toggle('on', sh));
+  $$('.c-shuffle, .tg-shuffle').forEach(b => b.classList.toggle('on', sh));
   const rp = st ? st.repeat : 0;
-  const rb = $('#player .c-repeat');
-  rb.classList.toggle('on', rp > 0);
-  rb.innerHTML = ic(rp === 2 ? 'repeat1' : 'repeat');
-  const sl = $('#player .c-sleep');
-  sl.classList.toggle('on', !!(st && st.sleep !== -1));
-  E.sleep.textContent = !st || st.sleep === -1 ? 'Sleep' : st.sleep === -2 ? 'End of song' : fmtTime(st.sleep + 999);
+  $$('.c-repeat').forEach(rb => {
+    rb.classList.toggle('on', rp > 0);
+    rb.innerHTML = ic(rp === 2 ? 'repeat1' : 'repeat');
+  });
+  const sleepOn = !!(st && st.sleep !== -1);
+  $$('.c-sleep').forEach(sl => sl.classList.toggle('on', sleepOn));
+  const sleepText = !st || st.sleep === -1 ? 'Sleep' : st.sleep === -2 ? 'End of song' : fmtTime(st.sleep + 999);
+  E.sleeps.forEach(x => { x.textContent = sleepText; });
   S.sleepBase = st && st.sleep > 0 ? { left: st.sleep, at: Date.now() } : null;
+  if (DESKTOP) deskState(st, t);
   $$('[data-act="play-ctx"]').forEach(b => { b.innerHTML = ic(st && st.playing && st.ref === b.dataset.ref ? 'pause' : 'play'); });
   $$('.qtile').forEach(q => q.classList.toggle('cur', !!(t && t.al && q.dataset.k === t.al.key)));
   if (st && S.queueSheet && (st.qv !== S.qv || st.uid !== S.lastUid)) refreshQueue();
@@ -1060,7 +1108,7 @@ function hookHeroColor(root, artId) {
   artColor(artId, c => { if (c) root.style.setProperty('--hc', c); });
 }
 
-const E = {};
+const E = { sleeps: [] };
 function tick() {
   const st = S.st;
   if (!st || !S.curT || !E.bar) return;
@@ -1068,15 +1116,21 @@ function tick() {
   const pos = S.seeking ? S.seekRatio * dur : livePos();
   const pct = dur > 0 ? clamp(pos / dur, 0, 1) * 100 : 0;
   E.bar.style.width = pct + '%';
+  if (E.dfill) {
+    E.dfill.style.width = pct + '%';
+    E.dknob.style.left = pct + '%';
+    E.dpos.textContent = fmtTime(pos);
+    E.ddur.textContent = fmtTime(dur);
+  }
   if (S.playerOpen) {
     E.fill.style.width = pct + '%';
     E.knob.style.left = pct + '%';
     E.pos.textContent = fmtTime(pos);
     E.dur.textContent = fmtTime(dur);
-    if (S.sleepBase) {
-      const left = Math.max(0, S.sleepBase.left - (Date.now() - S.sleepBase.at));
-      E.sleep.textContent = fmtTime(left + 999);
-    }
+  }
+  if (S.sleepBase && (S.playerOpen || DESKTOP)) {
+    const left = Math.max(0, S.sleepBase.left - (Date.now() - S.sleepBase.at));
+    E.sleeps.forEach(x => { x.textContent = fmtTime(left + 999); });
   }
 }
 
@@ -1112,16 +1166,14 @@ function fitTitle() {
     }
   });
 }
-function setupPlayerGestures() {
-  const pl = $('#player');
-  const seek = $('.seek', pl);
+function bindSeek(seek) {
   const seekAt = e => {
     const r = seek.getBoundingClientRect();
     S.seekRatio = clamp((e.clientX - r.left) / r.width, 0, 1);
     tick();
   };
   seek.addEventListener('pointerdown', e => {
-    if (!S.st) return;
+    if (!S.st || !S.curT) return;
     S.seeking = true;
     seek.classList.add('drag');
     try { seek.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
@@ -1141,6 +1193,10 @@ function setupPlayerGestures() {
   };
   seek.addEventListener('pointerup', end(true));
   seek.addEventListener('pointercancel', end(false));
+}
+function setupPlayerGestures() {
+  const pl = $('#player');
+  bindSeek($('.seek', pl));
 
   // swipe down to close, swipe the art sideways to skip
   let sx = 0, sy = 0, dx = 0, dy = 0, tracking = false, mode = '';
@@ -1246,6 +1302,7 @@ function trackMenu(t, list) {
     t.al ? { k: 'album', icon: 'disc', label: 'Go to album' } : null,
     t.al && t.al.ar ? { k: 'artist', icon: 'user', label: 'Go to artist' } : null,
     list && list.plId ? { k: 'plremove', icon: 'close', label: 'Remove from this playlist', danger: true } : null,
+    DESKTOP ? { k: 'reveal', icon: 'folder', label: IS_MAC ? 'Show in Finder' : 'Show in folder' } : null,
     { k: 'info', icon: 'info', label: 'Song info' }
   ], m => {
     if (m === 'like') toggleLike(t);
@@ -1256,6 +1313,7 @@ function trackMenu(t, list) {
     else if (m === 'artist') push('artist', t.al.ar.key);
     else if (m === 'plremove') removeFromPlaylist(list.plId, t);
     else if (m === 'info') songInfo(t);
+    else if (m === 'reveal') nat('reveal', t.id);
   });
 }
 function collectionMenu(title, sub, art, tracks, extra, onExtra) {
@@ -1576,7 +1634,12 @@ const ACTIONS = {
   'lib:albums': () => openLibFilter('albums'),
   'lib:artists': () => openLibFilter('artists'),
   'lib:songs': () => openLibFilter('songs'),
-  'lib:folders': () => openLibFilter('folders')
+  'lib:folders': () => openLibFilter('folders'),
+  // desktop only
+  'desk-choose': () => deskChooseFolder(true),
+  'desk-add': () => deskChooseFolder(false),
+  'desk-remove': b => applyFolders((nat('folders') || []).filter(p => p !== b.dataset.k)),
+  mute: () => nat('mute', !(S.st && S.st.muted))
 };
 
 function onClick(e) {
@@ -1594,9 +1657,28 @@ function onClick(e) {
     return;
   }
   const mini = e.target.closest('#mini');
-  if (mini && !(mini._swiped && Date.now() - mini._swiped < 400)) openPlayer();
+  if (mini && !(mini._swiped && Date.now() - mini._swiped < 400)) {
+    if (DESKTOP && document.body.classList.contains('wide')) {
+      if (e.target.closest('.mini-sub')) ACTIONS['player-artist']();
+      else if (e.target.closest('.mini-art, .mini-title')) openPlayer();
+      return;
+    }
+    openPlayer();
+  }
 }
 function onContextMenu(e) {
+  if (DESKTOP) {
+    const card = e.target.closest('[data-act="open-album"], [data-act="open-artist"]');
+    if (card && S.lib) {
+      e.preventDefault();
+      const a = card.dataset.act === 'open-album' ? S.lib.albumMap.get(card.dataset.k) : null;
+      const ar = card.dataset.act === 'open-artist' ? S.lib.artistMap.get(card.dataset.k) : null;
+      if (a) collectionMenu(a.name, a.artist, albumArt(a, '', 128), a.tracks,
+        a.ar ? [{ k: 'artist', icon: 'user', label: 'Go to artist' }] : [], m => { if (m === 'artist') push('artist', a.ar.key); });
+      else if (ar) collectionMenu(ar.name, `Artist · ${plural(ar.tracks.length, 'song')}`, artistArt(ar, '', 128), ar.tracks);
+      return;
+    }
+  }
   const row = e.target.closest('.tl .row[data-id]');
   if (!row) return;
   e.preventDefault();
@@ -1671,8 +1753,194 @@ window.__crate = {
   },
   setInsets,
   openPlayer() { closeAllSheets(); openPlayer(); },
-  libraryChanged() { loadLibrary('changed'); }
+  libraryChanged() { loadLibrary('changed'); },
+  // desktop: menu commands and scan progress
+  command(name) { deskCommand(name); },
+  scanProgress(p) {
+    S.scan = p;
+    $$('.loading .scan-note').forEach(x => { x.textContent = scanText(p); });
+  }
 };
+
+// ================================================================== desktop (Mac) layout
+// Everything here runs only in the Mac app. It adds a sidebar, a player bar with seek and volume,
+// keyboard shortcuts and the music-folder picker. The phone never calls any of it.
+
+function setupDesktop() {
+  const b = document.body;
+  b.classList.add('is-desktop');
+  if (IS_MAC) b.classList.add('is-mac');
+  S.home = nat('home') || '';
+  const mq = window.matchMedia('(min-width: 760px)');
+  const applyWide = () => {
+    b.classList.toggle('wide', mq.matches);
+    if (S.playerOpen) fitTitle();
+  };
+  mq.addEventListener('change', applyWide);
+  applyWide();
+
+  b.insertAdjacentHTML('afterbegin', '<div id="dragbar"></div>');
+  $('#app').insertAdjacentHTML('afterbegin', `<aside id="side">
+    <div class="side-brand"><span class="side-logo">${LOGO}</span><span class="dot-title">Crate</span></div>
+    <div class="side-nav"></div>
+    <div class="side-hd"><span class="label">Playlists</span><button class="ibtn" data-act="new-playlist" aria-label="New playlist" title="New playlist (⌘N)">${ic('plus', 'sm')}</button></div>
+    <div id="side-pls"></div>
+  </aside>`);
+  $('#side .side-nav').appendChild($('#tabs'));
+
+  const m = $('#mini');
+  const left = document.createElement('div');
+  left.className = 'desk-left';
+  m.insertBefore(left, m.firstChild);
+  left.append($('.mini-art', m), $('.mini-meta', m), $('.mini-like', m));
+  m.insertAdjacentHTML('beforeend', `
+    <div class="desk-ctrls">
+      <div class="dc-btns">
+        <button class="ibtn c-shuffle" data-act="shuffle" aria-label="Shuffle" title="Shuffle (⌘S)">${ic('shuffle')}</button>
+        <button class="ibtn dc-prev" data-act="prev" aria-label="Previous" title="Previous (⌘←)">${ic('prev')}</button>
+        <button class="c-main dc-main" data-act="toggle" aria-label="Play or pause" title="Play / Pause (Space)">${ic('play')}</button>
+        <button class="ibtn dc-next" data-act="next" aria-label="Next" title="Next (⌘→)">${ic('next')}</button>
+        <button class="ibtn c-repeat" data-act="repeat" aria-label="Repeat" title="Repeat (⌘R)">${ic('repeat')}</button>
+      </div>
+      <div class="dc-seek"><span class="dc-pos">0:00</span><div class="seek"><div class="seek-track"><i></i></div><div class="seek-knob"></div></div><span class="dc-dur">0:00</span></div>
+    </div>
+    <div class="desk-right">
+      <button class="ibtn c-sleep dr-sleep" data-act="sleep" aria-label="Sleep timer" title="Sleep timer"><span class="c-sleep-ic"></span><span class="c-sleep-t"></span></button>
+      <button class="ibtn dr-queue" data-act="queue" aria-label="Queue" title="Queue">${ic('queue', 'sm')}</button>
+      <button class="ibtn dr-vol" data-act="mute" aria-label="Mute" title="Mute">${ic('vol', 'sm')}</button>
+      <input class="vol" type="range" min="0" max="100" step="1" value="100" aria-label="Volume" title="Volume (⌘↑ ⌘↓)">
+    </div>`);
+  Object.assign(E, { dfill: $('.dc-seek .seek-track i', m), dknob: $('.dc-seek .seek-knob', m), dpos: $('.dc-pos', m), ddur: $('.dc-dur', m) });
+  bindSeek($('.dc-seek .seek', m));
+  const vol = $('.vol', m);
+  vol.addEventListener('pointerdown', () => { S.volDrag = true; });
+  vol.addEventListener('input', () => {
+    vol.style.setProperty('--v', vol.value + '%');
+    nat('volume', vol.value / 100);
+  });
+  const endDrag = () => { S.volDrag = false; };
+  vol.addEventListener('pointerup', endDrag);
+  vol.addEventListener('change', endDrag);
+  document.addEventListener('keydown', onKey);
+}
+
+/** Liked Songs and your playlists in the sidebar. */
+function renderSide() {
+  if (!DESKTOP) return;
+  const box = $('#side-pls');
+  if (!box) return;
+  const cv = curView();
+  const here = cv ? cv.type + ':' + (cv.arg || '') : '';
+  const pref = S.st && S.st.playing ? S.st.ref : '';
+  const row = (act, k, art, name, sub, key, ref) =>
+    `<button class="srow${here === key ? ' on' : ''}${pref && pref === ref ? ' playing' : ''}" data-act="${act}"${k ? ` data-k="${esc(k)}"` : ''} title="${esc(name)}">` +
+    `${art}<span class="meta"><span class="t">${esc(name)}</span><span class="s">${sub}</span></span>${pref && pref === ref ? EQ : ''}</button>`;
+  const liked = S.lib ? likedTracks().length : S.likes.length;
+  let html = row('open-liked', '', likedArt(), 'Liked Songs', `Playlist · ${plural(liked, 'song')}`, 'liked:', 'liked');
+  for (const pl of S.pls) {
+    const ts = S.lib ? plTracks(pl) : [];
+    html += row('open-playlist', pl.id, mosaicArt(ts, pl.id, pl.name), pl.name,
+      `Playlist · ${plural(S.lib ? ts.length : pl.keys.length, 'song')}`, 'playlist:' + pl.id, 'pl:' + pl.id);
+  }
+  box.innerHTML = html;
+}
+
+/** Volume, the empty bar and the sidebar's "now playing" marker. */
+function deskState(st, t) {
+  const m = $('#mini');
+  const v = !st ? 1 : st.muted ? 0 : (st.vol == null ? 1 : st.vol);
+  const vol = $('.vol', m);
+  if (vol) {
+    if (!S.volDrag) vol.value = String(Math.round(v * 100));
+    vol.style.setProperty('--v', Math.round(v * 100) + '%');
+  }
+  const vb = $('.dr-vol', m);
+  if (vb) vb.innerHTML = ic(v === 0 ? 'vol0' : v < 0.5 ? 'vol1' : 'vol', 'sm');
+  if (!t) {
+    $('.mini-title', m).textContent = '';
+    $('.mini-sub', m).textContent = '';
+    const img = $('.mini-art img', m);
+    if (img) { img.removeAttribute('src'); img.classList.remove('ok'); }
+    $('.mini-art', m).dataset.i = '';
+    if (E.dfill) {
+      E.dfill.style.width = '0%';
+      E.dknob.style.left = '0%';
+      E.dpos.textContent = '0:00';
+      E.ddur.textContent = '0:00';
+    }
+  }
+  const mark = st && st.playing ? st.ref : '';
+  if (mark !== S.sideMark) {
+    S.sideMark = mark;
+    renderSide();
+  }
+}
+
+/** Menu bar and Dock commands. */
+function deskCommand(name) {
+  const leaveOverlays = () => { closeAllSheets(); if (S.playerOpen) closePlayer(); };
+  switch (name) {
+    case 'settings': leaveOverlays(); ACTIONS.settings(); break;
+    case 'search': {
+      leaveOverlays();
+      if (S.tab !== 'search') switchTab('search');
+      else while (S.stacks.search.length > 1) pop();
+      setTimeout(() => { const i = $('.view[data-type="search"] input'); if (i) { i.focus(); i.select(); } }, 30);
+      break;
+    }
+    case 'tab-home': leaveOverlays(); switchTab('home'); break;
+    case 'tab-library': leaveOverlays(); switchTab('library'); break;
+    case 'back': window.__crate.back(); break;
+    case 'add-folder': deskChooseFolder(false); break;
+    case 'rescan': leaveOverlays(); ACTIONS.rescan(); break;
+    case 'new-playlist': leaveOverlays(); ACTIONS['new-playlist'](); break;
+    case 'now-playing': if (S.curT) { closeAllSheets(); openPlayer(); } break;
+    case 'queue': closeAllSheets(); openQueue(); break;
+    case 'sleep': closeAllSheets(); sleepSheet(); break;
+    case 'like': if (S.curT) toggleLike(S.curT); break;
+    case 'toast-shuffle': toast(S.st && S.st.shuffle ? 'Shuffle on' : 'Shuffle off'); break;
+    case 'toast-repeat': toast(['Repeat off', 'Repeat all', 'Repeat one'][S.st ? S.st.repeat : 0]); break;
+    default: break;
+  }
+}
+
+async function deskChooseFolder(replace) {
+  let p = null;
+  try { p = await N.chooseFolder(); } catch (e) { p = null; }
+  if (!p) return;
+  const cur = nat('folders') || [];
+  if (!replace && cur.includes(p)) { toast('Already one of your music folders'); return; }
+  await applyFolders(replace ? [p] : cur.concat([p]));
+}
+async function applyFolders(list) {
+  try { await N.setFolders(list); } catch (e) { return; }
+  nat('rescan');
+  S.lib = null;
+  S.scan = null;
+  rebuildAll();
+  await loadLibrary();
+  toast('Music folders updated');
+}
+
+/** Space, ⌘← ⌘→, ⌘↑ ⌘↓ and Esc (handled here so typing in the search box still works). */
+function onKey(e) {
+  const tg = e.target;
+  const typing = tg && ((tg.tagName === 'INPUT' && tg.type !== 'range') || tg.tagName === 'TEXTAREA' || tg.isContentEditable);
+  const mod = e.metaKey || e.ctrlKey;
+  if (e.key === 'Escape') {
+    if (typing) { if (tg.value) return; tg.blur(); }
+    if (window.__crate.back()) e.preventDefault();
+    return;
+  }
+  if (typing || e.altKey) return;
+  const vol = () => (S.st ? (S.st.muted ? 0 : S.st.vol) : 1);
+  if (e.key === ' ' && !mod) { e.preventDefault(); nat('toggle'); }
+  else if (mod && e.key === 'ArrowRight') { e.preventDefault(); nat('next'); }
+  else if (mod && e.key === 'ArrowLeft') { e.preventDefault(); nat('prev'); }
+  else if (mod && e.key === 'ArrowUp') { e.preventDefault(); nat('volume', clamp(vol() + 0.1, 0, 1)); }
+  else if (mod && e.key === 'ArrowDown') { e.preventDefault(); nat('volume', clamp(vol() - 0.1, 0, 1)); }
+  else if (!mod && e.key === '/') { e.preventDefault(); deskCommand('search'); }
+}
 
 // ================================================================== boot
 
@@ -1689,8 +1957,9 @@ function buildChrome() {
   $('#player .c-next').innerHTML = ic('next');
   $('#player .c-shuffle').innerHTML = ic('shuffle');
   $('#player .c-repeat').innerHTML = ic('repeat');
-  $('#player .c-sleep-ic').innerHTML = ic('moon', 'sm');
+  $$('.c-sleep-ic').forEach(x => { x.innerHTML = ic('moon', 'sm'); });
   $('#player .c-queue-ic').innerHTML = ic('queue', 'sm');
+  E.sleeps = $$('.c-sleep-t');
   document.addEventListener('click', onClick);
   document.addEventListener('contextmenu', onContextMenu);
   document.addEventListener('load', e => {
@@ -1706,6 +1975,7 @@ function buildChrome() {
 }
 
 function boot() {
+  if (DESKTOP) setupDesktop();
   buildChrome();
   setInsets(natJSON('insets'));
   loadPrefs();

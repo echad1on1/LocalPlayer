@@ -68,6 +68,13 @@ password `cratecrate`) as the ready-made APK, so your builds install as updates 
 
 Requires Android 11 or newer.
 
+## Crate for Mac
+
+There's a Mac version in [`desktop/`](desktop/README.md). It uses the same UI files as the
+phone app and reads your music folders on the laptop. To get it, open the **Actions** tab,
+run **Build Mac app**, then download **Crate-Mac-AppleSilicon** (M1 and newer) or
+**Crate-Mac-Intel** from the finished run.
+
 ## Credits
 
 Fonts: Doto and Space Mono, SIL Open Font License (see `app/src/main/assets/web/fonts`).

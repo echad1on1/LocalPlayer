@@ -1,0 +1,68 @@
+{
+  "name": "crate-desktop",
+  "productName": "Crate",
+  "version": "1.0.0",
+  "description": "Crate \u2014 a retro, folder-first music player",
+  "main": "main.js",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "dist:mac": "electron-builder --mac --arm64 --x64 --publish never"
+  },
+  "dependencies": {
+    "music-metadata": "^11.16.1"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "app.crate.player",
+    "productName": "Crate",
+    "copyright": "Crate",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**",
+      "renderer/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../app/src/main/assets/web",
+        "to": "web"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "darkModeSupport": true,
+      "minimumSystemVersion": "12.0",
+      "extendInfo": {
+        "NSHumanReadableCopyright": "Your music, straight from your folders.",
+        "LSApplicationCategoryType": "public.app-category.music"
+      },
+      "artifactName": "Crate-${version}-mac-${arch}.${ext}",
+      "timestamp": "none"
+    },
+    "dmg": {
+      "title": "Crate",
+      "artifactName": "Crate-${version}-mac-${arch}.${ext}"
+    },
+    "publish": null
+  },
+  "author": "Crate"
+}
