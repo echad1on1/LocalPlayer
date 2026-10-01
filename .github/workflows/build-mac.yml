@@ -1,0 +1,45 @@
+name: Build Mac app
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'app/src/main/assets/web/**'
+      - '.github/workflows/build-mac.yml'
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install
+        working-directory: desktop
+        run: npm ci
+      - name: Test
+        working-directory: desktop
+        run: npm test
+      - name: Build the apps (zip)
+        working-directory: desktop
+        run: npx electron-builder --mac zip --arm64 --x64 --publish never
+      - name: Build the disk images (dmg)
+        working-directory: desktop
+        continue-on-error: true
+        run: npx electron-builder --mac dmg --arm64 --x64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Crate-Mac-AppleSilicon
+          path: |
+            desktop/dist/*-arm64.dmg
+            desktop/dist/*-arm64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Crate-Mac-Intel
+          path: |
+            desktop/dist/*-x64.dmg
+            desktop/dist/*-x64.zip
